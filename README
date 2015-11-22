@@ -1,0 +1,7 @@
+This repository hosts a module for the ZNC bouncer software available at http://znc.in/
+
+When connected securely (SSL/TLS) to a server with ZNC; this module sends the certificate chain information for the server to the client. The client can then display the information in a friendly way, such as through a dialog. 
+
+The contents of this repository including source files and documentation are released into the Public Domain for unlimited distribution and modification.
+
+Support is not available for this project.
