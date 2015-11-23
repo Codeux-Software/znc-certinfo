@@ -51,10 +51,19 @@ public:
 private:
 	void sendCertificate()
 	{
-		/* Check whether we are connected and whether SSL is in use. */
 		CIRCNetwork *network = GetNetwork();
 
+		/* Check whether there is at least one connected client */
+		if (network->GetClients().size() < 1) {
+			return;
+		}
+
+		/* Check whether we are connected and whether SSL is in use. */
 		CIRCSock *socket = network->GetIRCSock();
+
+		if (socket == nullptr) {
+			return;
+		}
 
 		if (socket->GetSSL() == false) {
 			return;
@@ -62,6 +71,10 @@ private:
 
 		/* Ensure that the connected client supports the BATCH command */
 		CClient *client = GetClient();
+		
+		if (client == nullptr) {
+			return;
+		}
 
 		if (client->HasBatch() == false) {
 			return;
@@ -128,4 +141,4 @@ private:
 	}
 };
 
-GLOBALMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")
+NETWORKMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")
