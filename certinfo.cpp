@@ -10,16 +10,16 @@
 /* The certificate chain is sent using the BATCH command. */
 /* Each certificate is surrounded in its own nested BATCH within
  a single global BATCH for the whole session. */
- 
- /* Example response:
- 
-	>> :znc.in BATCH +1f5fddff8c009efe8b852ac2eb352591 znc.in/certinfo_v1
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +6f7a1a33eb6b948693cc7b89b3c3ba35 znc.in/certinfo_v1
+
+/* Example response:
+
+	>> :znc.in BATCH +1f5fddff8c009efe8b852ac2eb352591 znc.in/certinfo
+	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +6f7a1a33eb6b948693cc7b89b3c3ba35 znc.in/certinfo
 	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :...
 	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
 	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH -6f7a1a33eb6b948693cc7b89b3c3ba35
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +31fbfc94b95ccfa3664cd71833c4f571
+	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +31fbfc94b95ccfa3664cd71833c4f571 znc.in/certinfo
 	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :...
 	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
@@ -33,50 +33,64 @@
 
 /* Vendor flag appended to BATCH command so that the client knows
  what to expect when receiving the data. */
-static const char *CertInfoBatchCap = "znc.in/certinfo_v1";
+static const char *CertInfoBatchCap = "znc.in/certinfo";
 
 class CCertInfoMod : public CModule
 {
 public:
-	MODCONSTRUCTOR(CCertInfoMod) {}
-
-	void OnIRCConnected() override {
-		sendCertificate();
+	MODCONSTRUCTOR(CCertInfoMod) {
+		AddHelpCommand();
+		AddCommand("Send", static_cast<CModCommand::ModCmdFunc>(&CCertInfoMod::SendCertificateCommand), "", "Send certificate information to client");
 	}
 
-	void OnClientLogin() override {
-		sendCertificate();
-	}
-
-private:
-	void sendCertificate()
+	void OnClientCapLs(CClient *client, SCString &caps) override
 	{
-		CIRCNetwork *network = GetNetwork();
+		caps.insert(CertInfoBatchCap);
+	}
 
-		/* Check whether there is at least one connected client */
-		if (network->GetClients().size() < 1) {
+	bool IsClientCapSupported(CClient *client, const CString &cap, bool state) override
+	{
+		return cap.Equals(CertInfoBatchCap);
+	}
+
+	void SendCertificateCommand(const CString &line)
+	{
+		CClient *client = GetClient();
+
+		if (client == nullptr) {
+			PutModule("Error: GetClient() returned nullptr");
+
 			return;
 		}
 
-		/* Check whether we are connected and whether SSL is in use. */
-		CIRCSock *socket = network->GetIRCSock();
+		/* Ensure that the connected client opted for the CAP */
+		if (client->IsCapEnabled(CertInfoBatchCap) == false) {
+			PutModule("Error: Client does not support appropriate capacity");
 
-		if (socket == nullptr) {
-			return;
-		}
-
-		if (socket->GetSSL() == false) {
 			return;
 		}
 
 		/* Ensure that the connected client supports the BATCH command */
-		CClient *client = GetClient();
-		
-		if (client == nullptr) {
+		if (client->HasBatch() == false) {
+			PutModule("Error: Client does not support BATCH command");
+
 			return;
 		}
 
-		if (client->HasBatch() == false) {
+		/* Check whether we are connected and whether SSL is in use. */
+		CIRCNetwork *network = client->GetNetwork();
+
+		CIRCSock *socket = network->GetIRCSock();
+
+		if (socket == nullptr) {
+			PutModule("Error: network->GetIRCSock() returned nullptr");
+
+			return;
+		}
+
+		if (socket->GetSSL() == false) {
+			PutModule("Error: Client is not connected using SSL/TLS");
+
 			return;
 		}
 
@@ -84,6 +98,8 @@ private:
 		SSL *sslContext = socket->GetSSLObject();
 
 		if (sslContext == nullptr) {
+			PutModule("Error: socket->GetSSLObject() returned nullptr");
+
 			return;
 		}
 
@@ -91,6 +107,8 @@ private:
 		STACK_OF(X509) *certCollection = SSL_get_peer_cert_chain(sslContext);
 
 		if (certCollection == NULL) {
+			PutModule("Error: SSL_get_peer_cert_chain() returned nullptr");
+
 			return;
 		}
 
@@ -141,4 +159,4 @@ private:
 	}
 };
 
-NETWORKMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")
+GLOBALMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")
