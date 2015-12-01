@@ -91,6 +91,12 @@ public:
 		/* Check whether we are connected and whether SSL is in use. */
 		CIRCNetwork *mNetwork = mClient->GetNetwork();
 
+		if (mNetwork == nullptr) {
+			PutModule("Error:  mClient->GetNetwork() returned nullptr");
+
+			return;
+		}
+
 		CIRCSock *mSocket = mNetwork->GetIRCSock();
 
 		if (mSocket == nullptr) {
