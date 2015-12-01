@@ -26,9 +26,9 @@ The tlsinfo module sends certificate information on-demand.
 
 ## Raw certificate data
 
-The tlsinfo module is capable of sending certificate data to the connected client in [PEM](https://en.wikipedia.org/wiki/Privacy-enhanced_Electronic_Mail) format so that the client can present the information in a user friendly dialog.
+The tlsinfo module is capable of sending certificate data to the connected client in [PEM](https://en.wikipedia.org/wiki/Privacy-enhanced_Electronic_Mail) format so that the client can present the information in a user friendly way such as a dialog.
 
-It is recommended the connected clieCnt to request certificate information when raw numeric 001 (RPL_WELCOME) is received so that the certificate information is available at all times for the end user.
+It is recommended that the connected client requests certificate information when raw numeric 001 (RPL_WELCOME) is received so that the certificate information is available at all times for the end user.
 
 Example of requesting data using ``PRIVMSG`` command syntax:
 
