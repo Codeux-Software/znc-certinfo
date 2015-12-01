@@ -13,13 +13,13 @@
 
 /* Example response:
 
-	>> :znc.in BATCH +1f5fdd znc.in/certinfo
-	>> @batch=1f5fdd :znc.in BATCH +6f7a1a znc.in/certinfo-certificate
+	>> :znc.in BATCH +1f5fdd znc.in/tlsinfo
+	>> @batch=1f5fdd :znc.in BATCH +6f7a1a znc.in/tlsinfo-certificate
 	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :...
 	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
 	>> @batch=1f5fdd :znc.in BATCH -6f7a1a
-	>> @batch=1f5fdd :znc.in BATCH +31fbfc znc.in/certinfo-certificate
+	>> @batch=1f5fdd :znc.in BATCH +31fbfc znc.in/tlsinfo-certificate
 	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :...
 	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
@@ -31,70 +31,144 @@
 #include <znc/IRCNetwork.h>
 #include <znc/IRCSock.h>
 
-static const char *CertInfoCap = "znc.in/certinfo";
+static const char *TlsInfoCap = "znc.in/tlsinfo";
 
-static const char *CertInfoBatchGlobalType = "znc.in/certinfo";
-static const char *CertInfoBatchChildType = "znc.in/certinfo-certificate";
+static const char *TlsInfoBatchGlobalType = "znc.in/tlsinfo";
+static const char *TlsInfoBatchChildType = "znc.in/tlsinfo-certificate";
 
-class CCertInfoMod : public CModule
+class CTlsInfoMod : public CModule
 {
 public:
-	MODCONSTRUCTOR(CCertInfoMod) {
+
+#ifndef HAVE_LIBSSL
+	MODCONSTRUCTOR(CTlsInfoMod) {}
+
+	bool OnLoad(const CString&, CString& sMessage) {
+		sMessage = "Module built against install of ZNC that lacks SSL support.";
+
+		return false;
+	}
+
+#else // HAVE_LIBSSL
+
+	MODCONSTRUCTOR(CTlsInfoMod) {
 		AddHelpCommand();
-		AddCommand("Send", static_cast<CModCommand::ModCmdFunc>(&CCertInfoMod::SendCertificateCommand), "[details]", "Send certificate information to client. Append 'details' to the 'send' command ('send details') to include the entire certificate chain in output.");
+		AddCommand("Cert", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCertificateCommand), "[details]", "View certificate information for the active connection. Append 'details' to the 'send' command ('send details') to include the entire certificate chain in output.");
+		AddCommand("Cipher", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCipherCommand), "", "View the protocol and cipher suite used for the active connection.");
+		AddCommand("Send-Data", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::SendCertificateCommand), "", "Send certificate information for the active connection in an easily parsable format for application developers.");
 	}
 
 	void OnClientCapLs(CClient *mClient, SCString &mCaps) override
 	{
-		mCaps.insert(CertInfoCap);
+		mCaps.insert(TlsInfoCap);
 	}
 
 	bool IsClientCapSupported(CClient *mClient, const CString &mCap, bool mState) override
 	{
-		return mCap.Equals(CertInfoCap);
+		return mCap.Equals(TlsInfoCap);
+	}
+
+	void PrintCipherCommand(const CString &mLine)
+	{
+		CClient *mClient;
+
+		SSL *mSSLObject;
+
+		if (GetRelevantObjects(&mClient, &mSSLObject) == false) {
+			return;
+		}
+
+		/* Determine the protocol used for the connection */
+		int mSSLVersion = SSL_version(mSSLObject);
+
+		CString mSSLVersionString;
+
+		if (mSSLVersion == TLS1_2_VERSION) {
+			mSSLVersionString = CString("Transport Layer Security (TLS), version 1.2");
+		} else if (mSSLVersion == TLS1_1_VERSION) {
+			mSSLVersionString = CString("Transport Layer Security (TLS), version 1.1");
+		} else if (mSSLVersion == TLS1_VERSION) {
+			mSSLVersionString = CString("Transport Layer Security (TLS), version 1.0");
+		} else if (mSSLVersion == SSL3_VERSION) {
+			mSSLVersionString = CString("Secure Sockets Layer (SSL), version 3.0");
+		} else {
+			mSSLVersionString = CString("Unknown");
+		}
+
+		/* Output cipher information */
+		CString mCipherNameString = CString(SSL_get_cipher_name(mSSLObject));
+
+		PutModule("Connection secured using " + mSSLVersionString + " with the cipher suite: " + mCipherNameString);
+	}
+
+	void PrintCertificateCommand(const CString &mLine)
+	{
+		bool mPrintCertificateParents = false;
+
+		CString sCmd = mLine.Token(1);
+
+		if (sCmd.Equals("details")) {
+			mPrintCertificateParents = true;
+		}
+
+		PresentCertificateInformation(mLine, true, mPrintCertificateParents);
 	}
 
 	void SendCertificateCommand(const CString &mLine)
 	{
-#ifndef HAVE_LIBSSL
-		PutModule("Error: Module built against install of ZNC that lacks SSL support.");
-#else
-		CClient *mClient = GetClient();
+		PresentCertificateInformation(mLine, false, true);
+	}
 
-		if (mClient == nullptr) {
-			PutModule("Error: GetClient() returned nullptr");
+	void PresentCertificateInformation(const CString &mLine, bool mPrintCertificates = false, bool mPrintCertificateParents = false)
+	{
+		CClient *mClient;
 
+		SSL *mSSLObject;
+
+		if (GetRelevantObjects(&mClient, &mSSLObject) == false) {
 			return;
 		}
 
-		/* Check whether client supports capacity. */
-		bool mPrintCertificates = false;
-		bool mPrintCertificateParents = false;
-
-		if (mClient->IsCapEnabled(CertInfoCap) == false ||
+		if (mClient->IsCapEnabled(TlsInfoCap) == false ||
 			mClient->HasBatch() == false)
 		{
 			mPrintCertificates = true;
 		}
 
-		/* If certificates will be printed, then check whether we should
-		 print the entire certificate chain as well. When sending raw data,
-		 the entire chain is sent no matter what. */
-		if (mPrintCertificates) {
-			CString sCmd = mLine.Token(1);
+		/* Obtain list of certificates from SSL context object */
+		STACK_OF(X509) *mCertificateChain = SSL_get_peer_cert_chain(mSSLObject);
 
-			if (sCmd.Equals("details")) {
-				mPrintCertificateParents = true;
-			}
+		if (mCertificateChain == NULL) {
+			PutModule("Error: SSL_get_peer_cert_chain() returned nullptr");
+
+			return;
+		}
+
+		if (mPrintCertificates) {
+			PrintCertificateChainToQuery(mClient, mCertificateChain, mPrintCertificateParents);
+		} else {
+			SendCertificateChain(mClient, mCertificateChain);
+		}
+	}
+
+private:
+	bool GetRelevantObjects(CClient **eClient, SSL **eSSLObject)
+	{
+		CClient *mClient = GetClient();
+
+		if (mClient == nullptr) {
+			PutModule("Error: GetClient() returned nullptr");
+
+			return false;
 		}
 
 		/* Check whether we are connected and whether SSL is in use. */
 		CIRCNetwork *mNetwork = mClient->GetNetwork();
 
 		if (mNetwork == nullptr) {
-			PutModule("Error:  mClient->GetNetwork() returned nullptr");
+			PutModule("Error: mClient->GetNetwork() returned nullptr");
 
-			return;
+			return false;
 		}
 
 		CIRCSock *mSocket = mNetwork->GetIRCSock();
@@ -102,45 +176,32 @@ public:
 		if (mSocket == nullptr) {
 			PutModule("Error: mNetwork->GetIRCSock() returned nullptr");
 
-			return;
+			return false;
 		}
 
 		if (mSocket->GetSSL() == false) {
 			PutModule("Error: Client is not connected using SSL/TLS");
 
-			return;
+			return false;
 		}
 
 		/* Ask the socket for the SSL context object */
-		SSL *sslContext = mSocket->GetSSLObject();
+		SSL *mSSLObject = mSocket->GetSSLObject();
 
-		if (sslContext == nullptr) {
+		if (mSSLObject == nullptr) {
 			PutModule("Error: mSocket->GetSSLObject() returned nullptr");
 
-			return;
+			return false;
 		}
 
-		/* Obtain list of certificates from SSL context object */
-		STACK_OF(X509) *certCollection = SSL_get_peer_cert_chain(sslContext);
+		/* Assign objects and return success */
+		*eClient = mClient;
 
-		if (certCollection == NULL) {
-			PutModule("Error: SSL_get_peer_cert_chain() returned nullptr");
+		*eSSLObject = mSSLObject;
 
-			return;
-		}
-
-		if (mPrintCertificates) {
-			PrintCertificateChainToQuery(mClient, certCollection, mPrintCertificateParents);
-		} else {
-			SendCertificateChain(mClient, certCollection);
-		}
-
-#endif
+		return true;
 	}
 
-private:
-
-#ifdef HAVE_LIBSSL
 	void SendCertificateChain(CClient *mClient, STACK_OF(X509) *mCertificateChain)
 	{
 		/* Send batch command opening to client */
@@ -148,7 +209,7 @@ private:
 
 		CString mNickname = mClient->GetNick();
 
-		mClient->PutClient(":znc.in BATCH +" + mBatchName + " " + CertInfoBatchGlobalType);
+		mClient->PutClient(":znc.in BATCH +" + mBatchName + " " + TlsInfoBatchGlobalType);
 
 		/* The certificates are converted into PEM format, then each line
 		 is sent as a separate value to client. */
@@ -173,13 +234,13 @@ private:
 
 			CString pemBatchName = CString::RandomString(10).MD5();
 
-			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH +" + pemBatchName + " " + CertInfoBatchChildType);
+			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH +" + pemBatchName + " " + TlsInfoBatchChildType);
 
 			for (const CString& s : pemDataStringSplit) {
 				mClient->PutClient("@batch=" + pemBatchName + " :znc.in CERTINFO " + mNickname + " :" + s);
 			}
 
-			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH -" + CertInfoBatchChildType);
+			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH -" + TlsInfoBatchChildType);
 
 			/* Cleanup memory allocation */
 			BIO_free(bio_out);
@@ -189,7 +250,7 @@ private:
 		mClient->PutClient(":znc.in BATCH -" + mBatchName);
 	}
 
-	void PrintCertificateChainToQuery(CClient *mClient, STACK_OF(X509) *mCertificateChain, bool mPrintEntireChain = false)
+	void PrintCertificateChainToQuery(CClient *mClient, STACK_OF(X509) *mCertificateChain, bool mPrintCertificateParents = false)
 	{
 		/* Print certificate chain */
 		for (size_t i = 0; i < sk_X509_num(mCertificateChain); i++)
@@ -231,7 +292,7 @@ private:
 
 			/* First certificate is the peer certificate so if we do not
 			 need the rest of the chain, then break the loop here. */
-			if (mPrintEntireChain == false) {
+			if (mPrintCertificateParents == false) {
 				break;
 			}
 		}
@@ -240,4 +301,4 @@ private:
 	
 };
 
-GLOBALMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")
+GLOBALMODULEDEFS(CTlsInfoMod, "A module for presenting information about SSL/TLS connection")
