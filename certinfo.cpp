@@ -13,92 +13,103 @@
 
 /* Example response:
 
-	>> :znc.in BATCH +1f5fddff8c009efe8b852ac2eb352591 znc.in/certinfo
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +6f7a1a33eb6b948693cc7b89b3c3ba35 znc.in/certinfo
-	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
-	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :...
-	>> @batch=6f7a1a33eb6b948693cc7b89b3c3ba35 :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH -6f7a1a33eb6b948693cc7b89b3c3ba35
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH +31fbfc94b95ccfa3664cd71833c4f571 znc.in/certinfo
-	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
-	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :...
-	>> @batch=31fbfc94b95ccfa3664cd71833c4f571 :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
-	>> @batch=1f5fddff8c009efe8b852ac2eb352591 :znc.in BATCH -31fbfc94b95ccfa3664cd71833c4f571
-	>> :znc.in BATCH -1f5fddff8c009efe8b852ac2eb352591
+	>> :znc.in BATCH +1f5fdd znc.in/certinfo
+	>> @batch=1f5fdd :znc.in BATCH +6f7a1a znc.in/certinfo-certificate
+	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
+	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :...
+	>> @batch=6f7a1a :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
+	>> @batch=1f5fdd :znc.in BATCH -6f7a1a
+	>> @batch=1f5fdd :znc.in BATCH +31fbfc znc.in/certinfo-certificate
+	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
+	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :...
+	>> @batch=31fbfc :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
+	>> @batch=1f5fdd :znc.in BATCH -31fbfc
+	>> :znc.in BATCH -1f5fdd
  */
 
 #include <znc/Modules.h>
 #include <znc/IRCNetwork.h>
 #include <znc/IRCSock.h>
 
-/* Vendor flag appended to BATCH command so that the client knows
- what to expect when receiving the data. */
-static const char *CertInfoBatchCap = "znc.in/certinfo";
+static const char *CertInfoCap = "znc.in/certinfo";
+
+static const char *CertInfoBatchGlobalType = "znc.in/certinfo";
+static const char *CertInfoBatchChildType = "znc.in/certinfo-certificate";
 
 class CCertInfoMod : public CModule
 {
 public:
 	MODCONSTRUCTOR(CCertInfoMod) {
 		AddHelpCommand();
-		AddCommand("Send", static_cast<CModCommand::ModCmdFunc>(&CCertInfoMod::SendCertificateCommand), "", "Send certificate information to client");
+		AddCommand("Send", static_cast<CModCommand::ModCmdFunc>(&CCertInfoMod::SendCertificateCommand), "[details]", "Send certificate information to client. Append 'details' to the 'send' command ('send details') to include the entire certificate chain in output.");
 	}
 
-	void OnClientCapLs(CClient *client, SCString &caps) override
+	void OnClientCapLs(CClient *mClient, SCString &mCaps) override
 	{
-		caps.insert(CertInfoBatchCap);
+		mCaps.insert(CertInfoCap);
 	}
 
-	bool IsClientCapSupported(CClient *client, const CString &cap, bool state) override
+	bool IsClientCapSupported(CClient *mClient, const CString &mCap, bool mState) override
 	{
-		return cap.Equals(CertInfoBatchCap);
+		return mCap.Equals(CertInfoCap);
 	}
 
-	void SendCertificateCommand(const CString &line)
+	void SendCertificateCommand(const CString &mLine)
 	{
-		CClient *client = GetClient();
+#ifndef HAVE_LIBSSL
+		PutModule("Error: Module built against install of ZNC that lacks SSL support.");
+#else
+		CClient *mClient = GetClient();
 
-		if (client == nullptr) {
+		if (mClient == nullptr) {
 			PutModule("Error: GetClient() returned nullptr");
 
 			return;
 		}
 
-		/* Ensure that the connected client opted for the CAP */
-		if (client->IsCapEnabled(CertInfoBatchCap) == false) {
-			PutModule("Error: Client does not support appropriate capacity");
+		/* Check whether client supports capacity. */
+		bool mPrintCertificates = false;
+		bool mPrintCertificateParents = false;
 
-			return;
+		if (mClient->IsCapEnabled(CertInfoCap) == false ||
+			mClient->HasBatch() == false)
+		{
+			mPrintCertificates = true;
 		}
 
-		/* Ensure that the connected client supports the BATCH command */
-		if (client->HasBatch() == false) {
-			PutModule("Error: Client does not support BATCH command");
+		/* If certificates will be printed, then check whether we should
+		 print the entire certificate chain as well. When sending raw data,
+		 the entire chain is sent no matter what. */
+		if (mPrintCertificates) {
+			CString sCmd = mLine.Token(1);
 
-			return;
+			if (sCmd.Equals("details")) {
+				mPrintCertificateParents = true;
+			}
 		}
 
 		/* Check whether we are connected and whether SSL is in use. */
-		CIRCNetwork *network = client->GetNetwork();
+		CIRCNetwork *mNetwork = mClient->GetNetwork();
 
-		CIRCSock *socket = network->GetIRCSock();
+		CIRCSock *mSocket = mNetwork->GetIRCSock();
 
-		if (socket == nullptr) {
-			PutModule("Error: network->GetIRCSock() returned nullptr");
+		if (mSocket == nullptr) {
+			PutModule("Error: mNetwork->GetIRCSock() returned nullptr");
 
 			return;
 		}
 
-		if (socket->GetSSL() == false) {
+		if (mSocket->GetSSL() == false) {
 			PutModule("Error: Client is not connected using SSL/TLS");
 
 			return;
 		}
 
 		/* Ask the socket for the SSL context object */
-		SSL *sslContext = socket->GetSSLObject();
+		SSL *sslContext = mSocket->GetSSLObject();
 
 		if (sslContext == nullptr) {
-			PutModule("Error: socket->GetSSLObject() returned nullptr");
+			PutModule("Error: mSocket->GetSSLObject() returned nullptr");
 
 			return;
 		}
@@ -112,23 +123,37 @@ public:
 			return;
 		}
 
+		if (mPrintCertificates) {
+			PrintCertificateChainToQuery(mClient, certCollection, mPrintCertificateParents);
+		} else {
+			SendCertificateChain(mClient, certCollection);
+		}
+
+#endif
+	}
+
+private:
+
+#ifdef HAVE_LIBSSL
+	void SendCertificateChain(CClient *mClient, STACK_OF(X509) *mCertificateChain)
+	{
 		/* Send batch command opening to client */
-		CString sBatchName = CString::RandomString(10).MD5();
+		CString mBatchName = CString::RandomString(10).MD5();
 
-		CString nickname = client->GetNick();
+		CString mNickname = mClient->GetNick();
 
-		client->PutClient(":znc.in BATCH +" + sBatchName + " " + CertInfoBatchCap);
+		mClient->PutClient(":znc.in BATCH +" + mBatchName + " " + CertInfoBatchGlobalType);
 
 		/* The certificates are converted into PEM format, then each line
 		 is sent as a separate value to client. */
-		for (size_t i = 0; i < sk_X509_num(certCollection); i++)
+		for (size_t i = 0; i < sk_X509_num(mCertificateChain); i++)
 		{
 			/* Convert certificate into PEM format in a BIO buffer */
-			X509 *cert = sk_X509_value(certCollection, i);
+			X509 *certificate = sk_X509_value(mCertificateChain, i);
 
 			BIO *bio_out = BIO_new(BIO_s_mem());
 
-			PEM_write_bio_X509(bio_out, cert);
+			PEM_write_bio_X509(bio_out, certificate);
 
 			BUF_MEM *bio_buf;
 			BIO_get_mem_ptr(bio_out, &bio_buf);
@@ -137,26 +162,76 @@ public:
 			 lines by newline, and send the result to the client. */
 			CString pemDataString = CString(bio_buf->data, bio_buf->length);
 
-			VCString pemDataLines;
-			pemDataString.Split("\n", pemDataLines, false);
+			VCString pemDataStringSplit;
+			pemDataString.Split("\n", pemDataStringSplit, false);
 
 			CString pemBatchName = CString::RandomString(10).MD5();
 
-			client->PutClient("@batch=" + sBatchName + " :znc.in BATCH +" + pemBatchName + " " + CertInfoBatchCap);
+			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH +" + pemBatchName + " " + CertInfoBatchChildType);
 
-			for (const CString& pemData : pemDataLines) {
-				client->PutClient("@batch=" + pemBatchName + " :znc.in CERTINFO " + nickname + " :" + pemData);
+			for (const CString& s : pemDataStringSplit) {
+				mClient->PutClient("@batch=" + pemBatchName + " :znc.in CERTINFO " + mNickname + " :" + s);
 			}
 
-			client->PutClient("@batch=" + sBatchName + " :znc.in BATCH -" + pemBatchName);
+			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH -" + CertInfoBatchChildType);
 
 			/* Cleanup memory allocation */
 			BIO_free(bio_out);
 		}
 
 		/* Send batch command closing to client */
-		client->PutClient(":znc.in BATCH -" + sBatchName);
+		mClient->PutClient(":znc.in BATCH -" + mBatchName);
 	}
+
+	void PrintCertificateChainToQuery(CClient *mClient, STACK_OF(X509) *mCertificateChain, bool mPrintEntireChain = false)
+	{
+		/* Print certificate chain */
+		for (size_t i = 0; i < sk_X509_num(mCertificateChain); i++)
+		{
+			/* Convert printed result into a single string. */
+			X509 *certificate = sk_X509_value(mCertificateChain, i);
+
+			BIO *bio_out = BIO_new(BIO_s_mem());
+
+			X509_print(bio_out, certificate);
+
+			BUF_MEM *bio_buf;
+			BIO_get_mem_ptr(bio_out, &bio_buf);
+
+			CString certificateString = CString(bio_buf->data, bio_buf->length);
+
+			/* Split string into newlines and escape each line similar to how ZNC
+			 does it when presenting a certificate for fingerprinting. */
+			CString certificateNumber = CString(i + 1);
+
+			if (i == 0) {
+				PutModule("| ---- Certificate #" + certificateNumber + " (Peer Certificate) Start ---- |");
+			} else {
+				PutModule("| ---- Certificate #" + certificateNumber + " Start ---- |");
+			}
+
+			VCString certificateStringSplit;
+
+			certificateString.Split("\n", certificateStringSplit);
+
+			for (const CString& s : certificateStringSplit) {
+				PutModule("| " + s.Escape_n(CString::EDEBUG));
+			}
+
+			PutModule("| ---- Certificate #" + certificateNumber + " End ---- |");
+
+			/* Cleanup memory allocation */
+			BIO_free(bio_out);
+
+			/* First certificate is the peer certificate so if we do not
+			 need the rest of the chain, then break the loop here. */
+			if (mPrintEntireChain == false) {
+				break;
+			}
+		}
+	}
+#endif
+	
 };
 
 GLOBALMODULEDEFS(CCertInfoMod, "A module for sending certificate information to client")

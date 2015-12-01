@@ -6,7 +6,7 @@ When connected securely (SSL/TLS) to a server with ZNC; this module sends the ce
 
 The certinfo module sends certificate information on-demand. 
 
-It is recommended to request certificate information when raw numeric 001 (RPL_WELCOME) is recieved so that the certificate information is available at all times for the end user.
+It is recommended to request certificate information when raw numeric 001 (RPL_WELCOME) is received so that the certificate information is available at all times for the end user.
 
 Example of requesting data using ``PRIVMSG`` command syntax:
 
@@ -16,7 +16,7 @@ PRIVMSG *certinfo :send
 
 ## Enabling support for the certinfo module
 
-The certinfo module advertises a custom [IRCv3 capacity (CAP)](http://ircv3.net/specs/core/capability-negotiation-3.2.html) named ``znc.in/certinfo``. A client must acknowledge support for this capacity in order to recieve data.
+The certinfo module advertises a custom [IRCv3 capacity (CAP)](http://ircv3.net/specs/core/capability-negotiation-3.2.html) named ``znc.in/certinfo``. A client must acknowledge support for this capacity in order to receive data.
 
 Additionally, the certinfo module sends data in batches which means the client must also support the [batch](http://ircv3.net/specs/extensions/batch-3.2.html) capacity.
 
@@ -24,7 +24,7 @@ Additionally, the certinfo module sends data in batches which means the client m
 
 The certinfo module sends information in a very specific format:
 
-* Data recieved from the certinfo module is encapsulted in a global ``BATCH`` command with the type: ``znc.in/certinfo``
+* Data received from the certinfo module is encapsulated in a global ``BATCH`` command with the type: ``znc.in/certinfo``
 * Each certificate of the certificate chain is within its own nested ``BATCH`` command with the type ``znc.in/certinfo``
 * Each certificate is sent in [PEM](https://en.wikipedia.org/wiki/Privacy-enhanced_Electronic_Mail) format which is multi-line. Each line is represented by the custom ``CERTINFO`` command. A client can assemble the contents of each nested batch to create a complete certificate. 
 
@@ -34,7 +34,7 @@ The following example is the certificate chain for freenode:
 << PRIVMSG *certinfo :send
 
 >> :znc.in BATCH +128f2a znc.in/certinfo
->> @batch=128f2a :znc.in BATCH +9dc26d znc.in/certinfo
+>> @batch=128f2a :znc.in BATCH +9dc26d znc.in/certinfo-certificate
 >> @batch=9dc26d :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 >> @batch=9dc26d :znc.in CERTINFO ExampleUser :MIIE5jCCA86gAwIBAgIRAJ70g1ynPi73TW3fbOaE2pUwDQYJKoZIhvcNAQEFBQAw
 >> @batch=9dc26d :znc.in CERTINFO ExampleUser :QTELMAkGA1UEBhMCRlIxEjAQBgNVBAoTCUdBTkRJIFNBUzEeMBwGA1UEAxMVR2Fu
@@ -65,7 +65,7 @@ The following example is the certificate chain for freenode:
 >> @batch=9dc26d :znc.in CERTINFO ExampleUser :1K2fg+sOwxqj5g==
 >> @batch=9dc26d :znc.in CERTINFO ExampleUser :-----END CERTIFICATE-----
 >> @batch=128f2a :znc.in BATCH -9dc26d
->> @batch=128f2a :znc.in BATCH +8b8b0c znc.in/certinfo
+>> @batch=128f2a :znc.in BATCH +8b8b0c znc.in/certinfo-certificate
 >> @batch=8b8b0c :znc.in CERTINFO ExampleUser :-----BEGIN CERTIFICATE-----
 >> @batch=8b8b0c :znc.in CERTINFO ExampleUser :MIIEozCCA4ugAwIBAgIQWrYdrB5NogYUx1U9Pamy3DANBgkqhkiG9w0BAQUFADCB
 >> @batch=8b8b0c :znc.in CERTINFO ExampleUser :lzELMAkGA1UEBhMCVVMxCzAJBgNVBAgTAlVUMRcwFQYDVQQHEw5TYWx0IExha2Ug
