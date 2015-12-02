@@ -53,7 +53,7 @@ public:
 
 	MODCONSTRUCTOR(CTlsInfoMod) {
 		AddHelpCommand();
-		AddCommand("Cert", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCertificateCommand), "[details]", "View certificate information for the active connection. Append 'details' to the 'send' command ('send details') to include the entire certificate chain in output.");
+		AddCommand("Cert", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCertificateCommand), "[details]", "View certificate information for the active connection. Append 'details' to the 'cert' command ('cert details') to include the entire certificate chain in output.");
 		AddCommand("Cipher", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCipherCommand), "", "View the protocol and cipher suite used for the active connection.");
 		AddCommand("Send-Data", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::SendCertificateCommand), "", "Send certificate information for the active connection in an easily parsable format for application developers.");
 	}
