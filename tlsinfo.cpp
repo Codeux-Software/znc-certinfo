@@ -55,6 +55,8 @@ public:
 		AddHelpCommand();
 		AddCommand("Cert", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCertificateCommand), "[details]", "View certificate information for the active connection. Append 'details' to the 'cert' command ('cert details') to include the entire certificate chain in output.");
 		AddCommand("Cipher", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::PrintCipherCommand), "", "View the protocol and cipher suite used for the active connection.");
+		AddCommand("AddTrust", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::CertificateAddTrustCommand), "", "Mark the certificate of the active connection as trusted by ZNC");
+		AddCommand("RemoveTrust", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::CertificateRemoveTrustCommand), "", "Mark the certificate of the active connection as not trusted by ZNC.");
 		AddCommand("Send-Data", static_cast<CModCommand::ModCmdFunc>(&CTlsInfoMod::SendCertificateCommand), "", "Send certificate information for the active connection in an easily parsable format for application developers.");
 	}
 
@@ -68,13 +70,47 @@ public:
 		return mCap.Equals(TlsInfoCap);
 	}
 
+	void CertificateAddTrustCommand(const CString &mLine)
+	{
+		CertificateModifyTrust(true);
+	}
+
+	void CertificateRemoveTrustCommand(const CString &mLine)
+	{
+		CertificateModifyTrust(false);
+	}
+
+	void CertificateModifyTrust(bool mAddTrust)
+	{
+		CIRCNetwork *mNetwork;
+
+		CIRCSock *mSocket;
+
+		if (GetRelevantObjects(&mNetwork, nullptr, &mSocket, nullptr) == false) {
+			return;
+		}
+
+		CString mCertificateFingerprint = mSocket->GetSSLPeerFingerprint();
+
+		if (mAddTrust) {
+			mNetwork->AddTrustedFingerprint(mCertificateFingerprint);
+
+			PutModule("The following fingerprint is now trusted: " + mCertificateFingerprint);
+		} else {
+			mNetwork->DelTrustedFingerprint(mCertificateFingerprint);
+
+			PutModule("The following fingerprint is no longer trusted: " + mCertificateFingerprint);
+
+		}
+	}
+
 	void PrintCipherCommand(const CString &mLine)
 	{
 		CClient *mClient;
 
 		SSL *mSSLObject;
 
-		if (GetRelevantObjects(&mClient, &mSSLObject) == false) {
+		if (GetRelevantObjects(nullptr, &mClient, nullptr, &mSSLObject) == false) {
 			return;
 		}
 
@@ -125,7 +161,7 @@ public:
 
 		SSL *mSSLObject;
 
-		if (GetRelevantObjects(&mClient, &mSSLObject) == false) {
+		if (GetRelevantObjects(nullptr, &mClient, nullptr, &mSSLObject) == false) {
 			return;
 		}
 
@@ -152,7 +188,7 @@ public:
 	}
 
 private:
-	bool GetRelevantObjects(CClient **eClient, SSL **eSSLObject)
+	bool GetRelevantObjects(CIRCNetwork **eNetwork, CClient **eClient, CIRCSock **eSocket, SSL **eSSLObject)
 	{
 		CClient *mClient = GetClient();
 
@@ -195,9 +231,21 @@ private:
 		}
 
 		/* Assign objects and return success */
-		*eClient = mClient;
+		if ( eNetwork) {
+			*eNetwork = mNetwork;
+		}
 
-		*eSSLObject = mSSLObject;
+		if ( eSocket) {
+			*eSocket = mSocket;
+		}
+
+		if ( eClient) {
+			*eClient = mClient;
+		}
+
+		if ( eSSLObject) {
+			*eSSLObject = mSSLObject;
+		}
 
 		return true;
 	}
