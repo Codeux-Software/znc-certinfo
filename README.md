@@ -2,7 +2,7 @@ This repository hosts a module for the ZNC bouncer software available at http://
 
 When connected securely (SSL/TLS) to a server with ZNC; this module sends the certificate chain information for the server to the client.
 
-## Requesting Data
+## Usage Instructions
 
 The tlsinfo module sends certificate information on-demand. 
 
@@ -23,6 +23,19 @@ The tlsinfo module sends certificate information on-demand.
 ```
 /msg *tlsinfo cert cipher
 ```
+
+• To add the fingerprint of the peer certificate to ZNC's trust store:
+
+```
+/msg *tlsinfo cert addtrust
+```
+
+• To remove the fingerprint of the peer certificate from ZNC's trust store:
+
+```
+/msg *tlsinfo cert removetrust
+```
+
 
 ## Raw certificate data
 
