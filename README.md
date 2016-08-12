@@ -24,17 +24,6 @@ The tlsinfo module sends certificate information on-demand.
 /msg *tlsinfo cert cipher
 ```
 
-• To add the fingerprint of the peer certificate to ZNC's trust store:
-
-```
-/msg *tlsinfo cert addtrust
-```
-
-• To remove the fingerprint of the peer certificate from ZNC's trust store:
-
-```
-/msg *tlsinfo cert removetrust
-```
 
 
 ## Raw certificate data
