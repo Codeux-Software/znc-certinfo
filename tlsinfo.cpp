@@ -288,7 +288,7 @@ private:
 				mClient->PutClient("@batch=" + pemBatchName + " :znc.in CERTINFO " + mNickname + " :" + s);
 			}
 
-			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH -" + TlsInfoBatchChildType);
+			mClient->PutClient("@batch=" + mBatchName + " :znc.in BATCH -" + pemBatchName + " " + TlsInfoBatchChildType);
 
 			/* Cleanup memory allocation */
 			BIO_free(bio_out);
